@@ -25,8 +25,8 @@ import (
 	"database/sql/driver"
 	"time"
 
+	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/suite"
-	db "github.com/upper/db/v4"
 	"gopkg.in/mgo.v2/bson"
 )
 

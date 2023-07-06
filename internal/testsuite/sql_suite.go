@@ -13,8 +13,8 @@ import (
 
 	detectrace "github.com/ipfs/go-detect-race"
 	"github.com/sirupsen/logrus"
+	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/suite"
-	db "github.com/upper/db/v4"
 )
 
 type artistType struct {
@@ -103,7 +103,7 @@ func (s *SQLTestSuite) TestPreparedStatementsCache() {
 	}
 
 	// This limit was chosen because, by default, MySQL accepts 16k statements
-	// and dies. See https://github.com/upper/db/issues/287
+	// and dies. See https://github.com/star-table/db/issues/287
 	limit := 20000
 
 	if detectrace.WithRace() {
@@ -1867,7 +1867,7 @@ func (s *SQLTestSuite) TestExhaustConnectionPool() {
 }
 
 func (s *SQLTestSuite) TestCustomType() {
-	// See https://github.com/upper/db/issues/332
+	// See https://github.com/star-table/db/issues/332
 	sess := s.Session()
 
 	artist := sess.Collection("artist")

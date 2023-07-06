@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/star-table/db/v4/internal/adapter"
 	"github.com/stretchr/testify/assert"
-	"github.com/upper/db/v4/internal/adapter"
 )
 
 func TestComparison(t *testing.T) {

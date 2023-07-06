@@ -1,7 +1,7 @@
 package exql
 
 import (
-	"github.com/upper/db/v4/internal/cache"
+	"github.com/star-table/db/v4/internal/cache"
 )
 
 // Fragment is any interface that can be both cached and compiled.

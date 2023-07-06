@@ -34,11 +34,11 @@ import (
 	"strconv"
 	"strings"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/adapter"
-	"github.com/upper/db/v4/internal/reflectx"
-	"github.com/upper/db/v4/internal/sqladapter/compat"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/adapter"
+	"github.com/star-table/db/v4/internal/reflectx"
+	"github.com/star-table/db/v4/internal/sqladapter/compat"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 // MapOptions represents options for the mapper.
@@ -81,7 +81,7 @@ var (
 )
 
 var (
-	errDeprecatedJSONBTag = errors.New(`Tag "jsonb" is deprecated. See "PostgreSQL: jsonb tag" at https://github.com/upper/db/releases/tag/v3.4.0`)
+	errDeprecatedJSONBTag = errors.New(`Tag "jsonb" is deprecated. See "PostgreSQL: jsonb tag" at https://github.com/star-table/db/releases/tag/v3.4.0`)
 )
 
 type exprDB interface {

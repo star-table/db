@@ -21,7 +21,7 @@
 
 // Package cockroachdb wraps the github.com/lib/pq driver and provides a
 // compatibility later with CockroachDB. See
-// https://github.com/upper/db/adapter/cockroachdb for documentation,
+// https://github.com/star-table/db/adapter/cockroachdb for documentation,
 // particularities and usage examples.
 package cockroachdb
 
@@ -33,10 +33,10 @@ import (
 	"strings"
 
 	pq "github.com/lib/pq"
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 type database struct {

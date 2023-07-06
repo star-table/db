@@ -26,9 +26,9 @@ import (
 	"fmt"
 	"os"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/testsuite"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/testsuite"
 )
 
 var settings = ConnectionURL{

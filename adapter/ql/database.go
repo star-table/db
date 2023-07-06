@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // Package ql wraps the modernc.org/ql/driver QL driver. See
-// https://github.com/upper/db/adapter/ql for documentation, particularities and usage
+// https://github.com/star-table/db/adapter/ql for documentation, particularities and usage
 // examples.
 package ql
 
@@ -29,11 +29,11 @@ import (
 	"database/sql"
 	"strings"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/compat"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/compat"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 	_ "modernc.org/ql/driver" // QL driver
 )
 

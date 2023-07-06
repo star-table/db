@@ -30,9 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/star-table/db/v4/internal/testsuite"
 	"github.com/stretchr/testify/suite"
-	"github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/testsuite"
 )
 
 type int64Compat int64

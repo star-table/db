@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // Package mysql wraps the github.com/go-sql-driver/mysql MySQL driver. See
-// https://github.com/upper/db/adapter/mysql for documentation, particularities and usage
+// https://github.com/star-table/db/adapter/mysql for documentation, particularities and usage
 // examples.
 package mysql
 
@@ -31,9 +31,9 @@ import (
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver.
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 // database is the actual implementation of Database

@@ -28,7 +28,7 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 // JSON represents a MySQL's JSON value:

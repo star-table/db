@@ -3,8 +3,8 @@ package sqladapter
 import (
 	"reflect"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 func recordID(store db.Store, record db.Record) (db.Cond, error) {

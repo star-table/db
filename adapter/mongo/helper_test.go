@@ -27,8 +27,8 @@ import (
 
 	mgo "gopkg.in/mgo.v2"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/testsuite"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/testsuite"
 )
 
 var settings = ConnectionURL{

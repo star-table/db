@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // Package mssql wraps the github.com/go-sql-driver/mssql MySQL driver. See
-// https://github.com/upper/db/adapter/mssql for documentation, particularities and usage
+// https://github.com/star-table/db/adapter/mssql for documentation, particularities and usage
 // examples.
 package mssql
 
@@ -30,9 +30,9 @@ import (
 	"database/sql"
 
 	_ "github.com/denisenkom/go-mssqldb" // MSSQL driver
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 type database struct {

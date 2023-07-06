@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/upper/db/v4/internal/cache/hashstructure"
+	"github.com/star-table/db/v4/internal/cache/hashstructure"
 )
 
 const defaultCapacity = 128

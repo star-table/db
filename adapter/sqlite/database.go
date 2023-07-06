@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // Package sqlite wraps the github.com/lib/sqlite SQLite driver. See
-// https://github.com/upper/db/adapter/sqlite for documentation, particularities and
+// https://github.com/star-table/db/adapter/sqlite for documentation, particularities and
 // usage examples.
 package sqlite
 
@@ -30,10 +30,10 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite3 driver.
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/compat"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/compat"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 // database is the actual implementation of Database

@@ -24,9 +24,9 @@ package postgresql
 import (
 	"database/sql"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 // Adapter is the internal name of the adapter.

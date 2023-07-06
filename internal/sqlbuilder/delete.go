@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/immutable"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/immutable"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 type deleterQuery struct {

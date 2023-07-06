@@ -22,7 +22,7 @@
 package db
 
 import (
-	"github.com/upper/db/v4/internal/adapter"
+	"github.com/star-table/db/v4/internal/adapter"
 )
 
 // FuncExpr represents functions.

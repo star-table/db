@@ -24,8 +24,8 @@ package cockroachdb
 import (
 	"testing"
 
+	"github.com/star-table/db/v4/internal/testsuite"
 	"github.com/stretchr/testify/suite"
-	"github.com/upper/db/v4/internal/testsuite"
 )
 
 type RecordTests struct {

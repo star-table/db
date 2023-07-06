@@ -24,7 +24,7 @@
 //
 // Install upper/db:
 //
-//  go get github.com/upper/db
+//  go get github.com/star-table/db
 //
 // Usage
 //
@@ -33,7 +33,7 @@
 //  import (
 //  	"log"
 //
-//  	"github.com/upper/db/v4/adapter/postgresql" // Imports the postgresql adapter.
+//  	"github.com/star-table/db/v4/adapter/postgresql" // Imports the postgresql adapter.
 //  )
 //
 //  var settings = postgresql.ConnectionURL{

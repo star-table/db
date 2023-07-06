@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // Package postgresql provides an adapter for PostgreSQL.
-// See https://github.com/upper/db/adapter/postgresql for documentation,
+// See https://github.com/star-table/db/adapter/postgresql for documentation,
 // particularities and usage examples.
 package postgresql
 
@@ -28,10 +28,10 @@ import (
 	"fmt"
 	"strings"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 type database struct {

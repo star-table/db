@@ -3,9 +3,9 @@ package postgresql
 import (
 	"testing"
 
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 	"github.com/stretchr/testify/assert"
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqlbuilder"
 )
 
 func TestTemplateSelect(t *testing.T) {

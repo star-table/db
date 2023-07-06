@@ -26,8 +26,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 
-	"github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 // IsKeyValue reports whether v is a valid value for a primary key that can be

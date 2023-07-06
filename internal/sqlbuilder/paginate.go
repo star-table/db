@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/immutable"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/immutable"
 )
 
 var (

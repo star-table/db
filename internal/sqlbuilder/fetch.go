@@ -26,8 +26,8 @@ import (
 
 	"database/sql"
 	"database/sql/driver"
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/reflectx"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/reflectx"
 )
 
 type sessValueConverter interface {

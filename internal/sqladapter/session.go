@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/cache"
-	"github.com/upper/db/v4/internal/sqladapter/compat"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/cache"
+	"github.com/star-table/db/v4/internal/sqladapter/compat"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 var (

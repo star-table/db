@@ -3,8 +3,6 @@ package sqlbuilder
 import (
 	"database/sql"
 	"fmt"
-
-	"github.com/upper/db/v4"
 )
 
 // Engine represents a SQL database engine.

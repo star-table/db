@@ -22,8 +22,8 @@
 package mysql
 
 import (
-	"github.com/upper/db/v4/internal/cache"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/cache"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
 )
 
 const (

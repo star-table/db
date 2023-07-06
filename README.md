@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/upper/db/actions?query=workflow%3Aunit-tests"><img alt="upper/db unit tests status" src="https://github.com/upper/db/workflows/unit-tests/badge.svg"></a>
+  <a href="https://github.com/star-table/db/actions?query=workflow%3Aunit-tests"><img alt="upper/db unit tests status" src="https://github.com/star-table/db/workflows/unit-tests/badge.svg"></a>
 </p>
 
 # upper/db
@@ -34,4 +34,4 @@ Licensed under [MIT License](./LICENSE)
 
 ## Contributors
 
-See the [list of contributors](https://github.com/upper/db/graphs/contributors).
+See the [list of contributors](https://github.com/star-table/db/graphs/contributors).

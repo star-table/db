@@ -3,8 +3,8 @@ package testsuite
 import (
 	"time"
 
+	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/suite"
-	db "github.com/upper/db/v4"
 )
 
 const TimeZone = "Canada/Eastern"

@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/upper/db/v4/internal/adapter"
+	"github.com/star-table/db/v4/internal/adapter"
 )
 
 // LogicalExpr represents an expression to be used in logical statements.

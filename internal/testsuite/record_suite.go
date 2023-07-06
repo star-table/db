@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 	"github.com/stretchr/testify/suite"
-	"github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqlbuilder"
 )
 
 type AccountsStore struct {

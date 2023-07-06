@@ -22,7 +22,7 @@
 package adapter
 
 import (
-	"github.com/upper/db/v4/internal/immutable"
+	"github.com/star-table/db/v4/internal/immutable"
 )
 
 // LogicalExpr represents a group formed by one or more sentences joined by

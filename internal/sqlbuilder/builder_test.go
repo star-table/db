@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/assert"
-	db "github.com/upper/db/v4"
 )
 
 func TestSelect(t *testing.T) {

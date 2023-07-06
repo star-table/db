@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"reflect"
 
-	db "github.com/upper/db/v4"
-	"github.com/upper/db/v4/internal/sqladapter/exql"
-	"github.com/upper/db/v4/internal/sqlbuilder"
+	db "github.com/star-table/db/v4"
+	"github.com/star-table/db/v4/internal/sqladapter/exql"
+	"github.com/star-table/db/v4/internal/sqlbuilder"
 )
 
 // CollectionAdapter defines methods to be implemented by SQL adapters.

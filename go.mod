@@ -1,4 +1,4 @@
-module github.com/upper/db/v4
+module github.com/star-table/db/v4
 
 go 1.15
 
