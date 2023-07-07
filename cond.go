@@ -24,64 +24,45 @@ package db
 import (
 	"fmt"
 	"sort"
-
-	"github.com/star-table/db/v4/internal/adapter"
 )
 
-// LogicalExpr represents an expression to be used in logical statements.
-type LogicalExpr = adapter.LogicalExpr
-
-// LogicalOperator represents a logical operation.
-type LogicalOperator = adapter.LogicalOperator
-
-// Cond is a map that defines conditions for a query.
+// Cond is a map that defines conditions for a query and satisfies the
+// Constraints and Compound interfaces.
 //
 // Each entry of the map represents a condition (a column-value relation bound
-// by a comparison Operator). The comparison can be specified after the column
-// name, if no comparison operator is provided the equality operator is used as
-// default.
+// by a comparison operator). The comparison operator is optional and can be
+// specified after the column name, if no comparison operator is provided the
+// equality operator is used as default.
 //
 // Examples:
 //
-//  // Age equals 18.
+//  // Where age equals 18.
 //  db.Cond{"age": 18}
-//
-//  // Age is greater than or equal to 18.
+//  //	// Where age is greater than or equal to 18.
 //  db.Cond{"age >=": 18}
 //
-//  // id is any of the values 1, 2 or 3.
+//  // Where id is in a list of ids.
 //  db.Cond{"id IN": []{1, 2, 3}}
 //
-//  // Age is lower than 18 (MongoDB syntax)
+//  // Where age is lower than 18 (you could use this syntax when using
+//  // mongodb).
 //  db.Cond{"age $lt": 18}
 //
-//  // age > 32 and age < 35
+//  // Where age > 32 and age < 35
 //  db.Cond{"age >": 32, "age <": 35}
 type Cond map[interface{}]interface{}
 
-// Empty returns false if there are no conditions.
-func (c Cond) Empty() bool {
-	for range c {
-		return false
-	}
-	return true
-}
-
-// Constraints returns each one of the Cond map entires as a constraint.
-func (c Cond) Constraints() []adapter.Constraint {
-	z := make([]adapter.Constraint, 0, len(c))
-	for _, k := range c.keys() {
-		z = append(z, adapter.NewConstraint(k, c[k]))
+// Constraints returns each one of the Cond map records as a constraint.
+func (c Cond) Constraints() []Constraint {
+	z := make([]Constraint, 0, len(c))
+	for _, k := range c.Keys() {
+		z = append(z, NewConstraint(k, c[k]))
 	}
 	return z
 }
 
-// Operator returns the equality operator.
-func (c Cond) Operator() LogicalOperator {
-	return adapter.DefaultLogicalOperator
-}
-
-func (c Cond) keys() []interface{} {
+// Keys returns the keys of this map sorted by name.
+func (c Cond) Keys() []interface{} {
 	keys := make(condKeys, 0, len(c))
 	for k := range c {
 		keys = append(keys, k)
@@ -92,13 +73,26 @@ func (c Cond) keys() []interface{} {
 	return keys
 }
 
-// Expressions returns all the expressions contained in the condition.
-func (c Cond) Expressions() []LogicalExpr {
-	z := make([]LogicalExpr, 0, len(c))
-	for _, k := range c.keys() {
+// Sentences return each one of the map records as a compound.
+func (c Cond) Sentences() []Compound {
+	z := make([]Compound, 0, len(c))
+	for _, k := range c.Keys() {
 		z = append(z, Cond{k: c[k]})
 	}
 	return z
+}
+
+// Operator returns the default compound operator.
+func (c Cond) Operator() CompoundOperator {
+	return OperatorNone
+}
+
+// Empty returns false if there are no conditions.
+func (c Cond) Empty() bool {
+	for range c {
+		return false
+	}
+	return true
 }
 
 type condKeys []interface{}
@@ -114,17 +108,3 @@ func (ck condKeys) Less(i, j int) bool {
 func (ck condKeys) Swap(i, j int) {
 	ck[i], ck[j] = ck[j], ck[i]
 }
-
-func defaultJoin(in ...adapter.LogicalExpr) []adapter.LogicalExpr {
-	for i := range in {
-		cond, ok := in[i].(Cond)
-		if ok && !cond.Empty() {
-			in[i] = And(cond)
-		}
-	}
-	return in
-}
-
-var (
-	_ = LogicalExpr(Cond{})
-)

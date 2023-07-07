@@ -22,20 +22,20 @@
 package sqladapter
 
 import (
-	"errors"
 	"sync"
 	"sync/atomic"
 
-	db "github.com/star-table/db/v4"
-	"github.com/star-table/db/v4/internal/immutable"
+	db "upper.io/db.v3"
+	"upper.io/db.v3/internal/immutable"
+	"upper.io/db.v3/lib/sqlbuilder"
 )
 
 type Result struct {
-	builder db.SQL
+	builder sqlbuilder.SQLBuilder
 
 	err atomic.Value
 
-	iter   db.Iterator
+	iter   sqlbuilder.Iterator
 	iterMu sync.Mutex
 
 	prev *Result
@@ -67,7 +67,7 @@ func filter(conds []interface{}) []interface{} {
 
 // NewResult creates and Results a new Result set on the given table, this set
 // is limited by the given exql.Where conditions.
-func NewResult(builder db.SQL, table string, conds []interface{}) *Result {
+func NewResult(builder sqlbuilder.SQLBuilder, table string, conds []interface{}) *Result {
 	r := &Result{
 		builder: builder,
 	}
@@ -78,11 +78,11 @@ func (r *Result) frame(fn func(*result) error) *Result {
 	return &Result{err: r.err, prev: r, fn: fn}
 }
 
-func (r *Result) SQL() db.SQL {
+func (r *Result) SQLBuilder() sqlbuilder.SQLBuilder {
 	if r.prev == nil {
 		return r.builder
 	}
-	return r.prev.SQL()
+	return r.prev.SQLBuilder()
 }
 
 func (r *Result) from(table string) *Result {
@@ -184,9 +184,9 @@ func (r *Result) Offset(n int) db.Result {
 	})
 }
 
-// GroupBy is used to group Results that have the same value in the same column
+// Group is used to group Results that have the same value in the same column
 // or columns.
-func (r *Result) GroupBy(fields ...interface{}) db.Result {
+func (r *Result) Group(fields ...interface{}) db.Result {
 	return r.frame(func(res *result) error {
 		res.groupBy = fields
 		return nil
@@ -234,8 +234,7 @@ func (r *Result) All(dst interface{}) error {
 
 // One fetches only one Result from the set.
 func (r *Result) One(dst interface{}) error {
-	one := r.Limit(1).(*Result)
-	query, err := one.buildPaginator()
+	query, err := r.buildPaginator()
 	if err != nil {
 		r.setErr(err)
 		return err
@@ -263,7 +262,7 @@ func (r *Result) Next(dst interface{}) bool {
 		return true
 	}
 
-	if err := r.iter.Err(); !errors.Is(err, db.ErrNoMoreRows) {
+	if err := r.iter.Err(); err != db.ErrNoMoreRows {
 		r.setErr(err)
 		return false
 	}
@@ -355,7 +354,7 @@ func (r *Result) Exists() (bool, error) {
 	}{}
 
 	if err := query.One(&value); err != nil {
-		if errors.Is(err, db.ErrNoMoreRows) {
+		if err == db.ErrNoMoreRows {
 			return false, nil
 		}
 		r.setErr(err)
@@ -381,7 +380,7 @@ func (r *Result) Count() (uint64, error) {
 		Count uint64 `db:"_t"`
 	}{}
 	if err := query.One(&counter); err != nil {
-		if errors.Is(err, db.ErrNoMoreRows) {
+		if err == db.ErrNoMoreRows {
 			return 0, nil
 		}
 		r.setErr(err)
@@ -391,7 +390,7 @@ func (r *Result) Count() (uint64, error) {
 	return counter.Count, nil
 }
 
-func (r *Result) buildPaginator() (db.Paginator, error) {
+func (r *Result) buildPaginator() (sqlbuilder.Paginator, error) {
 	if err := r.Err(); err != nil {
 		return nil, err
 	}
@@ -401,8 +400,9 @@ func (r *Result) buildPaginator() (db.Paginator, error) {
 		return nil, err
 	}
 
-	sel := r.SQL().Select(res.fields...).
-		From(res.table).
+	b := r.SQLBuilder()
+
+	sel := b.Select(res.fields...).From(res.table).
 		Limit(res.limit).
 		Offset(res.offset).
 		GroupBy(res.groupBy...).
@@ -427,7 +427,7 @@ func (r *Result) buildPaginator() (db.Paginator, error) {
 	return pag, nil
 }
 
-func (r *Result) buildDelete() (db.Deleter, error) {
+func (r *Result) buildDelete() (sqlbuilder.Deleter, error) {
 	if err := r.Err(); err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func (r *Result) buildDelete() (db.Deleter, error) {
 		return nil, err
 	}
 
-	del := r.SQL().DeleteFrom(res.table).
+	del := r.SQLBuilder().DeleteFrom(res.table).
 		Limit(res.limit)
 
 	for i := range res.conds {
@@ -447,7 +447,7 @@ func (r *Result) buildDelete() (db.Deleter, error) {
 	return del, nil
 }
 
-func (r *Result) buildUpdate(values interface{}) (db.Updater, error) {
+func (r *Result) buildUpdate(values interface{}) (sqlbuilder.Updater, error) {
 	if err := r.Err(); err != nil {
 		return nil, err
 	}
@@ -457,7 +457,7 @@ func (r *Result) buildUpdate(values interface{}) (db.Updater, error) {
 		return nil, err
 	}
 
-	upd := r.SQL().Update(res.table).
+	upd := r.SQLBuilder().Update(res.table).
 		Set(values).
 		Limit(res.limit)
 
@@ -468,7 +468,7 @@ func (r *Result) buildUpdate(values interface{}) (db.Updater, error) {
 	return upd, nil
 }
 
-func (r *Result) buildCount() (db.Selector, error) {
+func (r *Result) buildCount() (sqlbuilder.Selector, error) {
 	if err := r.Err(); err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (r *Result) buildCount() (db.Selector, error) {
 		return nil, err
 	}
 
-	sel := r.SQL().Select(db.Raw("count(1) AS _t")).
+	sel := r.SQLBuilder().Select(db.Raw("count(1) AS _t")).
 		From(res.table).
 		GroupBy(res.groupBy...)
 

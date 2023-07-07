@@ -3,19 +3,30 @@ package testsuite
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	detectrace "github.com/ipfs/go-detect-race"
-	"github.com/sirupsen/logrus"
-	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/suite"
+	db "upper.io/db.v3"
+	"upper.io/db.v3/lib/sqlbuilder"
 )
+
+type customLogger struct {
+}
+
+func (*customLogger) Log(q *db.QueryStatus) {
+	switch q.Err {
+	case nil, db.ErrNoMoreRows:
+		return // Don't log successful queries.
+	}
+	// Alert of any other error.
+	log.Printf("Expected database error: %v\n%s", q.Err, q.String())
+}
 
 type artistType struct {
 	ID   int64  `db:"id,omitempty"`
@@ -74,7 +85,7 @@ func (s *SQLTestSuite) BeforeTest(suiteName, testName string) {
 	err := s.TearUp()
 	s.NoError(err)
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	// Creating test data
 	artist := sess.Collection("artist")
@@ -89,7 +100,7 @@ func (s *SQLTestSuite) BeforeTest(suiteName, testName string) {
 }
 
 func (s *SQLTestSuite) TestPreparedStatementsCache() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	sess.SetPreparedStatementCache(true)
 	defer sess.SetPreparedStatementCache(false)
@@ -103,18 +114,8 @@ func (s *SQLTestSuite) TestPreparedStatementsCache() {
 	}
 
 	// This limit was chosen because, by default, MySQL accepts 16k statements
-	// and dies. See https://github.com/star-table/db/issues/287
+	// and dies. See https://github.com/upper/db/issues/287
 	limit := 20000
-
-	if detectrace.WithRace() {
-		// When running this test under the Go race detector we quickly reach the limit
-		// of 8128 alive goroutines it can handle, so we set it to a safer number.
-		//
-		// Note that in order to fully stress this feature you'll have to run this
-		// test without the race detector.
-		limit = 100
-	}
-
 	var wg sync.WaitGroup
 
 	for i := 0; i < limit; i++ {
@@ -124,7 +125,9 @@ func (s *SQLTestSuite) TestPreparedStatementsCache() {
 
 			// This query is different on each iteration and generates a new
 			// prepared statement everytime it's called.
-			res := sess.Collection("artist").Find().Select(db.Raw(fmt.Sprintf("count(%d) AS c", i)))
+			res := sess.Collection("artist").
+				Find().
+				Select(db.Raw(fmt.Sprintf("count(%d)", i)))
 
 			var count map[string]uint64
 			err := res.One(&count)
@@ -184,14 +187,16 @@ func (s *SQLTestSuite) TestPreparedStatementsCache() {
 }
 
 func (s *SQLTestSuite) TestTruncateAllCollections() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	collections, err := sess.Collections()
 	s.NoError(err)
 	s.True(len(collections) > 0)
 
-	for _, col := range collections {
-		if ok, _ := col.Exists(); ok {
+	for _, name := range collections {
+		col := sess.Collection(name)
+
+		if col.Exists() {
 			if err = col.Truncate(); err != nil {
 				s.NoError(err)
 			}
@@ -199,18 +204,15 @@ func (s *SQLTestSuite) TestTruncateAllCollections() {
 	}
 }
 
-func (s *SQLTestSuite) TestQueryLogger() {
-	logLevel := db.LC().Level()
+func (s *SQLTestSuite) TestCustomQueryLogger() {
+	sess := s.SQLBuilder()
 
-	db.LC().SetLogger(logrus.New())
-	db.LC().SetLevel(db.LogLevelDebug)
-
+	sess.SetLogger(&customLogger{})
+	sess.SetLogging(true)
 	defer func() {
-		db.LC().SetLogger(nil)
-		db.LC().SetLevel(logLevel)
+		sess.SetLogger(nil)
+		sess.SetLogging(false)
 	}()
-
-	sess := s.Session()
 
 	_, err := sess.Collection("artist").Find().Count()
 	s.Equal(nil, err)
@@ -220,7 +222,7 @@ func (s *SQLTestSuite) TestQueryLogger() {
 }
 
 func (s *SQLTestSuite) TestExpectCursorError() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -239,7 +241,7 @@ func (s *SQLTestSuite) TestInsertDefault() {
 		s.T().Skip("Currently not supported.")
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -259,7 +261,7 @@ func (s *SQLTestSuite) TestInsertDefault() {
 }
 
 func (s *SQLTestSuite) TestInsertReturning() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -317,75 +319,78 @@ func (s *SQLTestSuite) TestInsertReturning() {
 }
 
 func (s *SQLTestSuite) TestInsertReturningWithinTransaction() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	err := sess.Collection("artist").Truncate()
 	s.NoError(err)
 
-	err = sess.Tx(func(tx db.Session) error {
-		artist := tx.Collection("artist")
+	tx, err := sess.NewTx(nil)
+	s.NoError(err)
+	defer tx.Close()
 
-		itemMap := map[string]string{
-			"name": "Ozzie",
-		}
-		s.Zero(itemMap["id"], "Must be zero before inserting")
-		err = artist.InsertReturning(&itemMap)
-		s.NoError(err)
-		s.NotZero(itemMap["id"], "Must not be zero after inserting")
+	artist := tx.Collection("artist")
 
-		itemStruct := struct {
-			ID   int    `db:"id,omitempty"`
-			Name string `db:"name"`
-		}{
-			0,
-			"Flea",
-		}
-		s.Zero(itemStruct.ID, "Must be zero before inserting")
-		err = artist.InsertReturning(&itemStruct)
-		s.NoError(err)
-		s.NotZero(itemStruct.ID, "Must not be zero after inserting")
+	itemMap := map[string]string{
+		"name": "Ozzie",
+	}
+	s.Zero(itemMap["id"], "Must be zero before inserting")
+	err = artist.InsertReturning(&itemMap)
+	s.NoError(err)
+	s.NotZero(itemMap["id"], "Must not be zero after inserting")
 
-		count, err := artist.Find().Count()
-		s.NoError(err)
-		s.Equal(uint64(2), count, "Expecting 2 elements")
+	itemStruct := struct {
+		ID   int    `db:"id,omitempty"`
+		Name string `db:"name"`
+	}{
+		0,
+		"Flea",
+	}
+	s.Zero(itemStruct.ID, "Must be zero before inserting")
+	err = artist.InsertReturning(&itemStruct)
+	s.NoError(err)
+	s.NotZero(itemStruct.ID, "Must not be zero after inserting")
 
-		itemStruct2 := struct {
-			ID   int    `db:"id,omitempty"`
-			Name string `db:"name"`
-		}{
-			0,
-			"Slash",
-		}
-		s.Zero(itemStruct2.ID, "Must be zero before inserting")
-		err = artist.InsertReturning(itemStruct2)
-		s.Error(err, "Should not happen, using a pointer should be enforced")
-		s.Zero(itemStruct2.ID, "Must still be zero because there was no insertion")
+	count, err := artist.Find().Count()
+	s.NoError(err)
+	s.Equal(uint64(2), count, "Expecting 2 elements")
 
-		itemMap2 := map[string]string{
-			"name": "Janus",
-		}
-		s.Zero(itemMap2["id"], "Must be zero before inserting")
-		err = artist.InsertReturning(itemMap2)
-		s.Error(err, "Should not happen, using a pointer should be enforced")
-		s.Zero(itemMap2["id"], "Must still be zero because there was no insertion")
+	itemStruct2 := struct {
+		ID   int    `db:"id,omitempty"`
+		Name string `db:"name"`
+	}{
+		0,
+		"Slash",
+	}
+	s.Zero(itemStruct2.ID, "Must be zero before inserting")
+	err = artist.InsertReturning(itemStruct2)
+	s.Error(err, "Should not happen, using a pointer should be enforced")
+	s.Zero(itemStruct2.ID, "Must still be zero because there was no insertion")
 
-		// Counting elements, must be exactly 2 elements.
-		count, err = artist.Find().Count()
-		s.NoError(err)
-		s.Equal(uint64(2), count, "Expecting 2 elements")
+	itemMap2 := map[string]string{
+		"name": "Janus",
+	}
+	s.Zero(itemMap2["id"], "Must be zero before inserting")
+	err = artist.InsertReturning(itemMap2)
+	s.Error(err, "Should not happen, using a pointer should be enforced")
+	s.Zero(itemMap2["id"], "Must still be zero because there was no insertion")
 
-		return fmt.Errorf("rolling back for no reason")
-	})
-	s.Error(err)
+	// Counting elements, must be exactly 2 elements.
+	count, err = artist.Find().Count()
+	s.NoError(err)
+	s.Equal(uint64(2), count, "Expecting 2 elements")
+
+	// Rolling back everything
+	err = tx.Rollback()
+	s.NoError(err)
 
 	// Expecting no elements.
-	count, err := sess.Collection("artist").Find().Count()
+	count, err = sess.Collection("artist").Find().Count()
 	s.NoError(err)
 	s.Equal(uint64(0), count, "Expecting 0 elements, everything was rolled back!")
 }
 
 func (s *SQLTestSuite) TestInsertIntoArtistsTable() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -396,11 +401,11 @@ func (s *SQLTestSuite) TestInsertIntoArtistsTable() {
 		"name": "Ozzie",
 	}
 
-	record, err := artist.Insert(itemMap)
+	id, err := artist.Insert(itemMap)
 	s.NoError(err)
-	s.NotNil(record)
+	s.NotNil(id)
 
-	if pk, ok := record.ID().(int64); !ok || pk == 0 {
+	if pk, ok := id.(int64); !ok || pk == 0 {
 		s.T().Errorf("Expecting an ID.")
 	}
 
@@ -411,11 +416,11 @@ func (s *SQLTestSuite) TestInsertIntoArtistsTable() {
 		"Flea",
 	}
 
-	record, err = artist.Insert(itemStruct)
+	id, err = artist.Insert(itemStruct)
 	s.NoError(err)
-	s.NotNil(record)
+	s.NotNil(id)
 
-	if pk, ok := record.ID().(int64); !ok || pk == 0 {
+	if pk, ok := id.(int64); !ok || pk == 0 {
 		s.T().Errorf("Expecting an ID.")
 	}
 
@@ -426,21 +431,23 @@ func (s *SQLTestSuite) TestInsertIntoArtistsTable() {
 		"Slash",
 	}
 
-	record, err = artist.Insert(&itemStruct2)
+	id, err = artist.Insert(itemStruct2)
 	s.NoError(err)
-	s.NotNil(record)
+	s.NotNil(id)
 
-	if pk, ok := record.ID().(int64); !ok || pk == 0 {
+	if pk, ok := id.(int64); !ok || pk == 0 {
 		s.T().Errorf("Expecting an ID.")
 	}
 
+	// Attempt to append and update a private key
 	itemStruct3 := artistType{
 		Name: "Janus",
 	}
-	record, err = artist.Insert(&itemStruct3)
+
+	id, err = artist.Insert(&itemStruct3)
 	s.NoError(err)
 	if s.Adapter() != "ql" {
-		s.NotZero(record) // QL always inserts an ID.
+		s.NotZero(id) // QL always inserts an ID.
 	}
 
 	// Counting elements, must be exactly 4 elements.
@@ -470,7 +477,7 @@ func (s *SQLTestSuite) TestInsertIntoArtistsTable() {
 }
 
 func (s *SQLTestSuite) TestQueryNonExistentCollection() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	count, err := sess.Collection("doesnotexist").Find().Count()
 	s.Error(err)
@@ -478,7 +485,7 @@ func (s *SQLTestSuite) TestQueryNonExistentCollection() {
 }
 
 func (s *SQLTestSuite) TestGetOneResult() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -510,7 +517,7 @@ func (s *SQLTestSuite) TestGetOneResult() {
 }
 
 func (s *SQLTestSuite) TestGetWithOffset() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -523,13 +530,17 @@ func (s *SQLTestSuite) TestGetWithOffset() {
 }
 
 func (s *SQLTestSuite) TestGetResultsOneByOne() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
 	rowMap := map[string]interface{}{}
 
 	res := artist.Find()
+
+	if s.Adapter() == "ql" {
+		res = res.Select("id() as id", "name")
+	}
 
 	err := res.Err()
 	s.NoError(err)
@@ -552,6 +563,10 @@ func (s *SQLTestSuite) TestGetResultsOneByOne() {
 
 	res = artist.Find()
 
+	if s.Adapter() == "ql" {
+		res = res.Select("id() as id", "name")
+	}
+
 	for res.Next(&rowStruct2) {
 		s.NotZero(rowStruct2.Value1)
 		s.NotZero(rowStruct2.Value2)
@@ -566,6 +581,9 @@ func (s *SQLTestSuite) TestGetResultsOneByOne() {
 	allRowsMap := []map[string]interface{}{}
 
 	res = artist.Find()
+	if s.Adapter() == "ql" {
+		res.Select("id() as id")
+	}
 
 	err = res.All(&allRowsMap)
 	s.NoError(err)
@@ -584,6 +602,9 @@ func (s *SQLTestSuite) TestGetResultsOneByOne() {
 	}{}
 
 	res = artist.Find()
+	if s.Adapter() == "ql" {
+		res.Select("id() as id")
+	}
 
 	if err = res.All(&allRowsStruct); err != nil {
 		s.T().Errorf("%v", err)
@@ -602,6 +623,9 @@ func (s *SQLTestSuite) TestGetResultsOneByOne() {
 	}{}
 
 	res = artist.Find()
+	if s.Adapter() == "ql" {
+		res.Select("id() as id", "name")
+	}
 
 	err = res.All(&allRowsStruct2)
 	s.NoError(err)
@@ -614,7 +638,7 @@ func (s *SQLTestSuite) TestGetResultsOneByOne() {
 }
 
 func (s *SQLTestSuite) TestGetAllResults() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -626,6 +650,9 @@ func (s *SQLTestSuite) TestGetAllResults() {
 	artists := []artistType{}
 
 	res := artist.Find()
+	if s.Adapter() == "ql" {
+		res.Select("id() as id", "name")
+	}
 
 	err = res.All(&artists)
 	s.NoError(err)
@@ -637,7 +664,9 @@ func (s *SQLTestSuite) TestGetAllResults() {
 	// Fetching all artists into struct pointers
 	artistObjs := []*artistType{}
 	res = artist.Find()
-
+	if s.Adapter() == "ql" {
+		res.Select("id() as id", "name")
+	}
 	err = res.All(&artistObjs)
 	s.NoError(err)
 	s.Equal(len(artistObjs), int(total))
@@ -659,7 +688,7 @@ func (s *SQLTestSuite) TestInlineStructs() {
 		Details       reviewTypeDetails `db:",inline"`
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	review := sess.Collection("review")
 
@@ -674,24 +703,30 @@ func (s *SQLTestSuite) TestInlineStructs() {
 		},
 	}
 
-	testTimeZone := time.UTC
-	switch s.Adapter() {
-	case "mysql": // MySQL uses a global time zone
-		testTimeZone = defaultTimeLocation
-	}
+	var createdAt time.Time
 
-	createdAt := time.Date(2016, time.January, 1, 2, 3, 4, 0, testTimeZone)
+	switch s.Adapter() {
+	case "postgresql":
+		createdAt = time.Date(2016, time.January, 1, 2, 3, 4, 0, time.FixedZone("", 0))
+	case "mysql":
+		// MySQL uses a global time zone
+		createdAt = time.Date(2016, time.January, 1, 2, 3, 4, 0, TimeLocation)
+	default:
+		createdAt = time.Date(2016, time.January, 1, 2, 3, 4, 0, time.UTC)
+	}
 	rec.Details.Created = createdAt
 
-	record, err := review.Insert(rec)
+	id, err := review.Insert(rec)
 	s.NoError(err)
-	s.NotZero(record.ID().(int64))
+	s.NotZero(id.(int64))
 
-	rec.ID = record.ID().(int64)
+	rec.ID = id.(int64)
 
 	var recChk reviewType
 	res := review.Find()
-
+	if s.Adapter() == "ql" {
+		res.Select("id() as id", "publication_id", "comments", "name", "created")
+	}
 	err = res.One(&recChk)
 	s.NoError(err)
 
@@ -699,7 +734,7 @@ func (s *SQLTestSuite) TestInlineStructs() {
 }
 
 func (s *SQLTestSuite) TestUpdate() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -757,7 +792,7 @@ func (s *SQLTestSuite) TestUpdate() {
 
 		// Updating using raw
 		if err = res.Update(struct {
-			Name *db.RawExpr `db:"name"`
+			Name db.RawValue `db:"name"`
 		}{db.Raw(`UPPER(name)`)}); err != nil {
 			s.T().Errorf("%v", err)
 		}
@@ -771,7 +806,7 @@ func (s *SQLTestSuite) TestUpdate() {
 
 		// Updating using raw
 		if err = res.Update(struct {
-			Name *db.FuncExpr `db:"name"`
+			Name db.Function `db:"name"`
 		}{db.Func("LOWER", db.Raw("name"))}); err != nil {
 			s.T().Errorf("%v", err)
 		}
@@ -831,7 +866,7 @@ func (s *SQLTestSuite) TestUpdate() {
 }
 
 func (s *SQLTestSuite) TestFunction() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	rowStruct := struct {
 		ID   int64
@@ -888,7 +923,7 @@ func (s *SQLTestSuite) TestFunction() {
 }
 
 func (s *SQLTestSuite) TestNullableFields() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	type testType struct {
 		ID              int64           `db:"id,omitempty"`
@@ -943,7 +978,7 @@ func (s *SQLTestSuite) TestNullableFields() {
 }
 
 func (s *SQLTestSuite) TestGroup() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	type statsType struct {
 		Numeric int `db:"numeric"`
@@ -967,7 +1002,7 @@ func (s *SQLTestSuite) TestGroup() {
 		"numeric",
 		db.Raw("count(1) AS counter"),
 		db.Raw("sum(value) AS total"),
-	).GroupBy("numeric")
+	).Group("numeric")
 
 	var results []map[string]interface{}
 
@@ -978,7 +1013,7 @@ func (s *SQLTestSuite) TestGroup() {
 }
 
 func (s *SQLTestSuite) TestInsertAndDelete() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 	res := artist.Find()
@@ -1000,7 +1035,7 @@ func (s *SQLTestSuite) TestCompositeKeys() {
 		s.T().Skip("Currently not supported.")
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	compositeKeys := sess.Collection("composite_keys")
 
@@ -1047,59 +1082,85 @@ func (s *SQLTestSuite) TestTransactionsAndRollback() {
 		s.T().Skip("Currently not supported.")
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
-	err := sess.Tx(func(tx db.Session) error {
-		artist := tx.Collection("artist")
-		err := artist.Truncate()
-		s.NoError(err)
-
-		_, err = artist.Insert(artistType{1, "First"})
-		s.NoError(err)
-
-		return nil
-	})
+	// Simple transaction that should not fail.
+	tx, err := sess.NewTx(nil)
 	s.NoError(err)
 
-	err = sess.Tx(func(tx db.Session) error {
-		artist := tx.Collection("artist")
+	artist := tx.Collection("artist")
+	err = artist.Truncate()
+	s.NoError(err)
 
-		_, err = artist.Insert(artistType{2, "Second"})
-		s.NoError(err)
+	_, err = artist.Insert(artistType{1, "First"})
+	s.NoError(err)
 
-		// Won't fail.
-		_, err = artist.Insert(artistType{3, "Third"})
-		s.NoError(err)
+	err = tx.Commit()
+	s.NoError(err)
 
-		// Will fail.
-		_, err = artist.Insert(artistType{1, "Duplicated"})
-		s.Error(err)
-
-		return err
-	})
+	// An attempt to use the same transaction must fail.
+	err = tx.Commit()
 	s.Error(err)
 
+	err = tx.Close()
+	s.NoError(err)
+
+	err = tx.Close()
+	s.NoError(err)
+
+	// Use another transaction.
+	tx, err = sess.NewTx(nil)
+	s.NoError(err)
+
+	artist = tx.Collection("artist")
+
+	_, err = artist.Insert(artistType{2, "Second"})
+	s.NoError(err)
+
+	// Won't fail.
+	_, err = artist.Insert(artistType{3, "Third"})
+	s.NoError(err)
+
+	// Will fail.
+	_, err = artist.Insert(artistType{1, "Duplicated"})
+	s.Error(err)
+
+	err = tx.Rollback()
+	s.NoError(err)
+
+	err = tx.Commit()
+	s.Error(err, "Already rolled back.")
+
 	// Let's verify we still have one element.
-	artist := sess.Collection("artist")
+	artist = sess.Collection("artist")
 
 	count, err := artist.Find().Count()
 	s.NoError(err)
 	s.Equal(uint64(1), count)
 
-	err = sess.Tx(func(tx db.Session) error {
-		artist := tx.Collection("artist")
+	err = tx.Close()
+	s.NoError(err)
 
-		// Won't fail.
-		_, err = artist.Insert(artistType{2, "Second"})
-		s.NoError(err)
+	// Attempt to add some rows.
+	tx, err = sess.NewTx(nil)
+	s.NoError(err)
 
-		// Won't fail.
-		_, err = artist.Insert(artistType{3, "Third"})
-		s.NoError(err)
+	artist = tx.Collection("artist")
 
-		return fmt.Errorf("rollback for no reason")
-	})
-	s.Error(err)
+	// Won't fail.
+	_, err = artist.Insert(artistType{2, "Second"})
+	s.NoError(err)
+
+	// Won't fail.
+	_, err = artist.Insert(artistType{3, "Third"})
+	s.NoError(err)
+
+	// Then rollback for no reason.
+	err = tx.Rollback()
+	s.NoError(err)
+
+	err = tx.Commit()
+	s.Error(err, "Already rolled back.")
 
 	// Let's verify we still have one element.
 	artist = sess.Collection("artist")
@@ -1108,21 +1169,28 @@ func (s *SQLTestSuite) TestTransactionsAndRollback() {
 	s.NoError(err)
 	s.Equal(uint64(1), count)
 
-	// Attempt to add some rows.
-	err = sess.Tx(func(tx db.Session) error {
-		artist = tx.Collection("artist")
-
-		// Won't fail.
-		_, err = artist.Insert(artistType{2, "Second"})
-		s.NoError(err)
-
-		// Won't fail.
-		_, err = artist.Insert(artistType{3, "Third"})
-		s.NoError(err)
-
-		return nil
-	})
+	err = tx.Close()
 	s.NoError(err)
+
+	// Attempt to add some rows.
+	tx, err = sess.NewTx(nil)
+	s.NoError(err)
+
+	artist = tx.Collection("artist")
+
+	// Won't fail.
+	_, err = artist.Insert(artistType{2, "Second"})
+	s.NoError(err)
+
+	// Won't fail.
+	_, err = artist.Insert(artistType{3, "Third"})
+	s.NoError(err)
+
+	err = tx.Commit()
+	s.NoError(err)
+
+	err = tx.Rollback()
+	s.Error(err, "Already committed")
 
 	// Let's verify we have 3 rows.
 	artist = sess.Collection("artist")
@@ -1164,7 +1232,7 @@ func (s *SQLTestSuite) TestDataTypes() {
 		Time  int64      `db:"_time"`
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	// Getting a pointer to the "data_types" collection.
 	dataTypes := sess.Collection("data_types")
@@ -1173,19 +1241,21 @@ func (s *SQLTestSuite) TestDataTypes() {
 	err := dataTypes.Truncate()
 	s.NoError(err)
 
-	testTimeZone := time.Local
-	switch s.Adapter() {
-	case "mysql", "postgresql": // MySQL uses a global time zone
-		testTimeZone = defaultTimeLocation
-	}
+	// Inserting our test subject.
+	loc, err := time.LoadLocation(TimeZone)
+	s.NoError(err)
 
-	ts := time.Date(2011, 7, 28, 1, 2, 3, 0, testTimeZone)
-	tnz := ts.In(time.UTC)
+	ts := time.Date(2011, 7, 28, 1, 2, 3, 0, loc) // timestamp with time zone
 
+	var tnz time.Time
 	switch s.Adapter() {
+	case "postgresql":
+		tnz = time.Date(2012, 7, 28, 1, 2, 3, 0, time.FixedZone("", 0)) // timestamp without time zone
 	case "mysql":
 		// MySQL uses a global timezone
-		tnz = ts.In(defaultTimeLocation)
+		tnz = time.Date(2012, 7, 28, 1, 2, 3, 0, TimeLocation)
+	default:
+		tnz = time.Date(2012, 7, 28, 1, 2, 3, 0, time.UTC) // timestamp without time zone
 	}
 
 	testValues := testValuesStruct{
@@ -1198,10 +1268,10 @@ func (s *SQLTestSuite) TestDataTypes() {
 		"Hello world!",
 		[]byte("Hello world!"),
 
-		ts,   // Date
-		nil,  // DateN
-		&tnz, // DateP
-		nil,  // DateD
+		ts,
+		nil,
+		&tnz,
+		nil,
 		int64(time.Second * time.Duration(7331)),
 	}
 	id, err := dataTypes.Insert(testValues)
@@ -1224,25 +1294,18 @@ func (s *SQLTestSuite) TestDataTypes() {
 
 	err = res.One(&item)
 	s.NoError(err)
-
 	s.NotNil(item.DateD)
-	s.NotNil(item.Date)
 
 	// Copy the default date (this value is set by the database)
 	testValues.DateD = item.DateD
-	item.Date = item.Date.In(testTimeZone)
-
-	s.Equal(testValues.Date, item.Date)
-	s.Equal(testValues.DateN, item.DateN)
-	s.Equal(testValues.DateP, item.DateP)
-	s.Equal(testValues.DateD, item.DateD)
+	item.Date = item.Date.In(loc)
 
 	// The original value and the test subject must match.
 	s.Equal(testValues, item)
 }
 
 func (s *SQLTestSuite) TestUpdateWithNullColumn() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 	err := artist.Truncate()
@@ -1275,16 +1338,15 @@ func (s *SQLTestSuite) TestUpdateWithNullColumn() {
 }
 
 func (s *SQLTestSuite) TestBatchInsert() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	for batchSize := 0; batchSize < 17; batchSize++ {
 		err := sess.Collection("artist").Truncate()
 		s.NoError(err)
 
-		q := sess.SQL().InsertInto("artist").Columns("name")
+		q := sess.InsertInto("artist").Columns("name")
 
-		switch s.Adapter() {
-		case "postgresql", "cockroachdb":
+		if s.Adapter() == "postgresql" {
 			q = q.Amend(func(query string) string {
 				return query + ` ON CONFLICT DO NOTHING`
 			})
@@ -1318,13 +1380,13 @@ func (s *SQLTestSuite) TestBatchInsert() {
 }
 
 func (s *SQLTestSuite) TestBatchInsertNoColumns() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	for batchSize := 0; batchSize < 17; batchSize++ {
 		err := sess.Collection("artist").Truncate()
 		s.NoError(err)
 
-		batch := sess.SQL().InsertInto("artist").Batch(batchSize)
+		batch := sess.InsertInto("artist").Batch(batchSize)
 
 		totalItems := int(rand.Int31n(21))
 
@@ -1355,22 +1417,18 @@ func (s *SQLTestSuite) TestBatchInsertNoColumns() {
 }
 
 func (s *SQLTestSuite) TestBatchInsertReturningKeys() {
-	switch s.Adapter() {
-	case "postgresql", "cockroachdb":
-		// pass
-	default:
+	if s.Adapter() != "postgresql" {
 		s.T().Skip("Currently not supported.")
-		return
 	}
 
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	err := sess.Collection("artist").Truncate()
 	s.NoError(err)
 
 	batchSize, totalItems := 7, 12
 
-	batch := sess.SQL().InsertInto("artist").Columns("name").Returning("id").Batch(batchSize)
+	batch := sess.InsertInto("artist").Columns("name").Returning("id").Batch(batchSize)
 
 	go func() {
 		defer batch.Done()
@@ -1407,12 +1465,12 @@ func (s *SQLTestSuite) TestBatchInsertReturningKeys() {
 }
 
 func (s *SQLTestSuite) TestPaginator() {
-	sess := s.Session()
+	sess := s.SQLBuilder()
 
 	err := sess.Collection("artist").Truncate()
 	s.NoError(err)
 
-	batch := sess.SQL().InsertInto("artist").Batch(100)
+	batch := sess.InsertInto("artist").Batch(100)
 
 	go func() {
 		defer batch.Done()
@@ -1428,9 +1486,9 @@ func (s *SQLTestSuite) TestPaginator() {
 	s.NoError(err)
 	s.NoError(batch.Err())
 
-	q := sess.SQL().SelectFrom("artist")
+	q := sess.SelectFrom("artist")
 	if s.Adapter() == "ql" {
-		q = sess.SQL().SelectFrom(sess.SQL().Select("id() AS id", "name").From("artist"))
+		q = sess.SelectFrom(sess.Select("id() AS id", "name").From("artist"))
 	}
 
 	const pageSize = 13
@@ -1488,7 +1546,6 @@ func (s *SQLTestSuite) TestPaginator() {
 		if err != nil {
 			s.T().Errorf("%v", err)
 		}
-		s.NoError(err)
 		if len(items) < 1 {
 			s.Equal(totalPages+1, i)
 			break
@@ -1541,12 +1598,13 @@ func (s *SQLTestSuite) TestPaginator() {
 
 	if s.Adapter() == "ql" {
 		s.T().Skip("Unsupported, see https://github.com/cznic/ql/issues/182")
-		return
 	}
 
 	{
 		result := sess.Collection("artist").Find()
-
+		if s.Adapter() == "ql" {
+			result = result.Select("id() AS id", "name")
+		}
 		fifteenResults := 15
 		resultPaginator := result.Paginate(uint(fifteenResults))
 
@@ -1619,106 +1677,21 @@ func (s *SQLTestSuite) TestPaginator() {
 	}
 }
 
-func (s *SQLTestSuite) TestPaginator_Issue607() {
-	sess := s.Session()
-
-	err := sess.Collection("artist").Truncate()
-	s.NoError(err)
-
-	// Add first batch
-	{
-		batch := sess.SQL().InsertInto("artist").Batch(50)
-
-		go func() {
-			defer batch.Done()
-			for i := 0; i < 49; i++ {
-				value := struct {
-					Name string `db:"name"`
-				}{fmt.Sprintf("artist-1.%d", i)}
-				batch.Values(value)
-			}
-		}()
-
-		err = batch.Wait()
-		s.NoError(err)
-		s.NoError(batch.Err())
-	}
-
-	artists := []*artistType{}
-	paginator := sess.SQL().Select("name").From("artist").Paginate(10)
-
-	err = paginator.Page(1).All(&artists)
-	s.NoError(err)
-
-	{
-		totalPages, err := paginator.TotalPages()
-		s.NoError(err)
-		s.NotZero(totalPages)
-		s.Equal(uint(5), totalPages)
-	}
-
-	// Add second batch
-	{
-		batch := sess.SQL().InsertInto("artist").Batch(50)
-
-		go func() {
-			defer batch.Done()
-			for i := 0; i < 49; i++ {
-				value := struct {
-					Name string `db:"name"`
-				}{fmt.Sprintf("artist-2.%d", i)}
-				batch.Values(value)
-			}
-		}()
-
-		err = batch.Wait()
-		s.NoError(err)
-		s.NoError(batch.Err())
-	}
-
-	{
-		totalPages, err := paginator.TotalPages()
-		s.NoError(err)
-		s.NotZero(totalPages)
-		s.Equal(uint(10), totalPages, "expect number of pages to change")
-	}
-
-	artists = []*artistType{}
-
-	cond := db.Cond{"name": db.Like("artist-1.%")}
-	if s.Adapter() == "ql" {
-		cond = db.Cond{"name": db.Like("artist-1.")}
-	}
-
-	paginator = sess.SQL().Select("name").From("artist").Where(cond).Paginate(10)
-
-	err = paginator.Page(1).All(&artists)
-	s.NoError(err)
-
-	{
-		totalPages, err := paginator.TotalPages()
-		s.NoError(err)
-		s.NotZero(totalPages)
-		s.Equal(uint(5), totalPages, "expect same 5 pages from the first batch")
-	}
-
-}
-
-func (s *SQLTestSuite) TestSession() {
-	sess := s.Session()
+func (s *SQLTestSuite) TestSQLBuilder() {
+	sess := s.SQLBuilder()
 
 	var all []map[string]interface{}
 
 	err := sess.Collection("artist").Truncate()
 	s.NoError(err)
 
-	_, err = sess.SQL().InsertInto("artist").Values(struct {
+	_, err = sess.InsertInto("artist").Values(struct {
 		Name string `db:"name"`
 	}{"Rinko Kikuchi"}).Exec()
 	s.NoError(err)
 
 	// Using explicit iterator.
-	iter := sess.SQL().SelectFrom("artist").Iterator()
+	iter := sess.SelectFrom("artist").Iterator()
 	err = iter.All(&all)
 
 	s.NoError(err)
@@ -1726,14 +1699,14 @@ func (s *SQLTestSuite) TestSession() {
 
 	// Using explicit iterator to fetch one item.
 	var item map[string]interface{}
-	iter = sess.SQL().SelectFrom("artist").Iterator()
+	iter = sess.SelectFrom("artist").Iterator()
 	err = iter.One(&item)
 
 	s.NoError(err)
 	s.NotZero(item)
 
 	// Using explicit iterator and NextScan.
-	iter = sess.SQL().SelectFrom("artist").Iterator()
+	iter = sess.SelectFrom("artist").Iterator()
 	var id int
 	var name string
 
@@ -1753,7 +1726,7 @@ func (s *SQLTestSuite) TestSession() {
 	s.Error(err)
 
 	// Using explicit iterator and ScanOne.
-	iter = sess.SQL().SelectFrom("artist").Iterator()
+	iter = sess.SelectFrom("artist").Iterator()
 	id, name = 0, ""
 	if s.Adapter() == "ql" {
 		err = iter.ScanOne(&name)
@@ -1770,7 +1743,7 @@ func (s *SQLTestSuite) TestSession() {
 	s.Error(err)
 
 	// Using explicit iterator and Next.
-	iter = sess.SQL().SelectFrom("artist").Iterator()
+	iter = sess.SelectFrom("artist").Iterator()
 
 	var artist map[string]interface{}
 	for iter.Next(&artist) {
@@ -1789,38 +1762,58 @@ func (s *SQLTestSuite) TestSession() {
 	}
 
 	// Using implicit iterator.
-	q := sess.SQL().SelectFrom("artist")
+	q := sess.SelectFrom("artist")
 	err = q.All(&all)
 
 	s.NoError(err)
 	s.NotZero(all)
 
-	err = sess.Tx(func(tx db.Session) error {
-		q := tx.SQL().SelectFrom("artist")
-		s.NotZero(iter)
-
-		err = q.All(&all)
-		s.NoError(err)
-		s.NotZero(all)
-
-		return nil
-	})
-
+	tx, err := sess.NewTx(nil)
 	s.NoError(err)
+	s.NotZero(tx)
+	defer tx.Close()
+
+	q = tx.SelectFrom("artist")
+	s.NotZero(iter)
+
+	err = q.All(&all)
+	s.NoError(err)
+	s.NotZero(all)
+
+	s.NoError(tx.Commit())
 }
 
 func (s *SQLTestSuite) TestExhaustConnectionPool() {
 	if s.Adapter() == "ql" {
 		s.T().Skip("Currently not supported.")
-		return
 	}
 
-	sess := s.Session()
-	errRolledBack := errors.New("rolled back")
+	var tMu sync.Mutex
+
+	tFatal := func(err error) {
+		tMu.Lock()
+		defer tMu.Unlock()
+
+		s.T().Errorf("%v", err)
+	}
+
+	tLogf := func(format string, args ...interface{}) {
+		tMu.Lock()
+		defer tMu.Unlock()
+
+		s.T().Logf(format, args...)
+	}
+
+	sess := s.SQLBuilder()
+
+	sess.SetLogging(true)
+	defer func() {
+		sess.SetLogging(false)
+	}()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
-		s.T().Logf("Tx %d: Pending", i)
+		tLogf("Tx %d: Pending", i)
 
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
@@ -1828,37 +1821,84 @@ func (s *SQLTestSuite) TestExhaustConnectionPool() {
 
 			// Requesting a new transaction session.
 			start := time.Now()
-			s.T().Logf("Tx: %d: NewTx", i)
+			tLogf("Tx: %d: NewTx", i)
+			tx, err := sess.NewTx(nil)
+			if err != nil {
+				tFatal(err)
+			}
+			tLogf("Tx %d: OK (time to connect: %v)", i, time.Since(start))
 
-			expectError := false
-			if i%2 == 1 {
-				expectError = true
+			if !sess.LoggingEnabled() {
+				tLogf("Expecting logging to be enabled")
 			}
 
-			err := sess.Tx(func(tx db.Session) error {
-				s.T().Logf("Tx %d: OK (time to connect: %v)", i, time.Since(start))
-				// Let's suppose that we do a bunch of complex stuff and that the
-				// transaction lasts 3 seconds.
-				time.Sleep(time.Second * 3)
+			if !tx.LoggingEnabled() {
+				tLogf("Expecting logging to be enabled (enabled by parent session)")
+			}
 
-				if expectError {
-					if _, err := tx.SQL().DeleteFrom("artist").Exec(); err != nil {
-						return err
-					}
-					return errRolledBack
-				}
+			// Let's suppose that we do a bunch of complex stuff and that the
+			// transaction lasts 3 seconds.
+			time.Sleep(time.Second * 3)
 
+			switch i % 7 {
+			case 0:
 				var account map[string]interface{}
 				if err := tx.Collection("artist").Find().One(&account); err != nil {
-					return err
+					tFatal(err)
 				}
-				return nil
-			})
-			if expectError {
-				s.Error(err)
-				s.True(errors.Is(err, errRolledBack))
-			} else {
-				s.NoError(err)
+				if err := tx.Commit(); err != nil {
+					tFatal(err)
+				}
+				tLogf("Tx %d: Committed", i)
+			case 1:
+				if _, err := tx.DeleteFrom("artist").Exec(); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Rollback(); err != nil {
+					tFatal(err)
+				}
+				tLogf("Tx %d: Rolled back", i)
+			case 2:
+				if err := tx.Close(); err != nil {
+					tFatal(err)
+				}
+				tLogf("Tx %d: Closed", i)
+			case 3:
+				var account map[string]interface{}
+				if err := tx.Collection("artist").Find().One(&account); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Close(); err != nil {
+					tFatal(err)
+				}
+				tLogf("Tx %d: Committed and closed", i)
+			case 4:
+				if err := tx.Rollback(); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Close(); err != nil {
+					tFatal(err)
+				}
+				tLogf("Tx %d: Rolled back and closed", i)
+			case 5:
+				if err := tx.Close(); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Commit(); err == nil {
+					tFatal(fmt.Errorf("Error expected"))
+				}
+				tLogf("Tx %d: Closed and committed", i)
+			case 6:
+				if err := tx.Close(); err != nil {
+					tFatal(err)
+				}
+				if err := tx.Rollback(); err == nil {
+					tFatal(fmt.Errorf("Error expected"))
+				}
+				tLogf("Tx %d: Closed and rolled back", i)
 			}
 		}(&wg, i)
 	}
@@ -1867,8 +1907,8 @@ func (s *SQLTestSuite) TestExhaustConnectionPool() {
 }
 
 func (s *SQLTestSuite) TestCustomType() {
-	// See https://github.com/star-table/db/issues/332
-	sess := s.Session()
+	// See https://github.com/upper/db/issues/332
+	sess := s.SQLBuilder()
 
 	artist := sess.Collection("artist")
 
@@ -1889,8 +1929,10 @@ func (s *SQLTestSuite) TestCustomType() {
 }
 
 func (s *SQLTestSuite) Test_Issue565() {
+	sess := s.Session().(sqlbuilder.Database)
 	ctx, _ := context.WithTimeout(context.Background(), time.Nanosecond)
-	sess := s.Session().WithContext(ctx)
+
+	sess = sess.WithContext(ctx)
 
 	var result birthday
 	err := sess.Collection("birthdays").Find().Select("name").One(&result)

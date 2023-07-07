@@ -1,7 +1,7 @@
 package exql
 
 import (
-	"github.com/star-table/db/v4/internal/cache"
+	"upper.io/db.v3/internal/cache"
 )
 
 const (

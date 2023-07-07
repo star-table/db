@@ -3,16 +3,18 @@ package testsuite
 import (
 	"time"
 
-	db "github.com/star-table/db/v4"
 	"github.com/stretchr/testify/suite"
+	db "upper.io/db.v3"
+	"upper.io/db.v3/lib/sqlbuilder"
 )
 
 const TimeZone = "Canada/Eastern"
 
-var defaultTimeLocation, _ = time.LoadLocation(TimeZone)
+var TimeLocation, _ = time.LoadLocation(TimeZone)
 
 type Helper interface {
-	Session() db.Session
+	SQLBuilder() sqlbuilder.Database
+	Session() db.Database
 
 	Adapter() string
 

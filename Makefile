@@ -1,28 +1,36 @@
-SHELL                 ?= /bin/bash
+SHELL                 := /bin/bash
 
 PARALLEL_FLAGS        ?= --halt-on-error 2 --jobs=4 -v -u
 
 TEST_FLAGS            ?=
 
-UPPER_DB_LOG          ?= WARN
-
 export TEST_FLAGS
 export PARALLEL_FLAGS
-export UPPER_DB_LOG
 
-test: go-test-internal test-adapters
+test: test-libs test-adapters
 
-benchmark: go-benchmark-internal
+benchmark-lib:
+	go test -v -benchtime=500ms -bench=. ./lib/...
 
-go-benchmark-%:
-	go test -v -benchtime=500ms -bench=. ./$*/...
+benchmark-internal:
+	go test -v -benchtime=500ms -bench=. ./internal/...
 
-go-test-%:
-	go test -v ./$*/...
+benchmark: benchmark-lib benchmark-internal
+
+test-lib:
+	go test -v ./lib/...
+
+test-internal:
+	go test -v ./internal/...
+
+test-libs:
+	parallel $(PARALLEL_FLAGS) \
+		"$(MAKE) test-{}" ::: \
+			lib \
+			internal
 
 test-adapters: \
 	test-adapter-postgresql \
-	test-adapter-cockroachdb \
 	test-adapter-mysql \
 	test-adapter-mssql \
 	test-adapter-sqlite \
@@ -30,7 +38,7 @@ test-adapters: \
 	test-adapter-mongo
 
 test-adapter-%:
-	($(MAKE) -C adapter/$* test-extended || exit 1)
+	($(MAKE) -C $* test-extended || exit 1)
 
 test-generic:
 	export TEST_FLAGS="-run TestGeneric"; \

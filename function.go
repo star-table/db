@@ -21,14 +21,18 @@
 
 package db
 
-import (
-	"github.com/star-table/db/v4/internal/adapter"
-)
+// Function interface defines methods for representing database functions.
+// This is an exported interface but it's rarely used directly, you may want to
+// use the `db.Func()` function instead.
+type Function interface {
+	// Name returns the function name.
+	Name() string
 
-// FuncExpr represents functions.
-type FuncExpr = adapter.FuncExpr
+	// Argument returns the function arguments.
+	Arguments() []interface{}
+}
 
-// Func returns a database function expression.
+// Func represents a database function and satisfies the db.Function interface.
 //
 // Examples:
 //
@@ -43,6 +47,21 @@ type FuncExpr = adapter.FuncExpr
 //
 //	// RTRIM("Hello  ")
 //	db.Func("RTRIM", "Hello  ")
-func Func(name string, args ...interface{}) *FuncExpr {
-	return adapter.NewFuncExpr(name, args)
+func Func(name string, args ...interface{}) Function {
+	return &dbFunc{name: name, args: args}
 }
+
+type dbFunc struct {
+	name string
+	args []interface{}
+}
+
+func (f *dbFunc) Arguments() []interface{} {
+	return f.args
+}
+
+func (f *dbFunc) Name() string {
+	return f.name
+}
+
+var _ = Function(&dbFunc{})

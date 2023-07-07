@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync/atomic"
 
-	"github.com/star-table/db/v4/internal/cache"
+	"upper.io/db.v3/internal/cache"
 )
 
 type hash struct {

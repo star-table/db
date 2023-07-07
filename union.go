@@ -21,34 +21,35 @@
 
 package db
 
-import (
-	"github.com/star-table/db/v4/internal/adapter"
-)
-
-// OrExpr represents a logical expression joined by logical disjunction (OR).
-type OrExpr struct {
-	*adapter.LogicalExprGroup
+// Union represents a compound joined by OR.
+type Union struct {
+	*compound
 }
 
-// Or adds more expressions to the group.
-func (o *OrExpr) Or(orConds ...LogicalExpr) *OrExpr {
-	var fn func(*[]LogicalExpr) error
+// Or adds more terms to the compound.
+func (o *Union) Or(orConds ...Compound) *Union {
+	var fn func(*[]Compound) error
 	if len(orConds) > 0 {
-		fn = func(in *[]LogicalExpr) error {
+		fn = func(in *[]Compound) error {
 			*in = append(*in, orConds...)
 			return nil
 		}
 	}
-	return &OrExpr{o.LogicalExprGroup.Frame(fn)}
+	return &Union{o.compound.frame(fn)}
 }
 
-// Empty returns false if the expressions has zero conditions.
-func (o *OrExpr) Empty() bool {
-	return o.LogicalExprGroup.Empty()
+// Operator returns the OR operator.
+func (o *Union) Operator() CompoundOperator {
+	return OperatorOr
+}
+
+// Empty returns false if this struct holds no conditions.
+func (o *Union) Empty() bool {
+	return o.compound.Empty()
 }
 
 // Or joins conditions under logical disjunction. Conditions can be represented
-// by `db.Cond{}`, `db.Or()` or `db.And()`.
+// by db.Cond{}, db.Or() or db.And().
 //
 // Example:
 //
@@ -57,8 +58,6 @@ func (o *OrExpr) Empty() bool {
 //		db.Cond{"year": 2012},
 //		db.Cond{"year": 1987},
 //	)
-func Or(conds ...LogicalExpr) *OrExpr {
-	return &OrExpr{adapter.NewLogicalExprGroup(adapter.LogicalOperatorOr, defaultJoin(conds...)...)}
+func Or(conds ...Compound) *Union {
+	return &Union{newCompound(defaultJoin(conds...)...)}
 }
-
-var _ = adapter.LogicalExpr(&OrExpr{})

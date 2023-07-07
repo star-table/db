@@ -22,224 +22,125 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"os"
-	"runtime"
+	"regexp"
 	"strings"
+	"time"
 )
-
-// LogLevel represents a verbosity level for logs
-type LogLevel int8
-
-// Log levels
-const (
-	LogLevelTrace LogLevel = -1
-
-	LogLevelDebug LogLevel = iota
-	LogLevelInfo
-	LogLevelWarn
-	LogLevelError
-	LogLevelFatal
-	LogLevelPanic
-)
-
-var logLevels = map[LogLevel]string{
-	LogLevelTrace: "TRACE",
-	LogLevelDebug: "DEBUG",
-	LogLevelInfo:  "INFO",
-	LogLevelWarn:  "WARNING",
-	LogLevelError: "ERROR",
-	LogLevelFatal: "FATAL",
-	LogLevelPanic: "PANIC",
-}
-
-func (ll LogLevel) String() string {
-	return logLevels[ll]
-}
 
 const (
-	defaultLogLevel LogLevel = LogLevelWarn
+	fmtLogSessID       = `Session ID:     %05d`
+	fmtLogTxID         = `Transaction ID: %05d`
+	fmtLogQuery        = `Query:          %s`
+	fmtLogArgs         = `Arguments:      %#v`
+	fmtLogRowsAffected = `Rows affected:  %d`
+	fmtLogLastInsertID = `Last insert ID: %d`
+	fmtLogError        = `Error:          %v`
+	fmtLogTimeTaken    = `Time taken:     %0.5fs`
+	fmtLogContext      = `Context:        %v`
 )
 
-var defaultLogger Logger = log.New(os.Stdout, "", log.LstdFlags)
+var (
+	reInvisibleChars = regexp.MustCompile(`[\s\r\n\t]+`)
+)
 
-// Logger represents a logging interface that is compatible with the standard
-// "log" and with many other logging libraries.
+// QueryStatus represents the status of a query after being executed.
+type QueryStatus struct {
+	SessID uint64
+	TxID   uint64
+
+	RowsAffected *int64
+	LastInsertID *int64
+
+	Query string
+	Args  []interface{}
+
+	Err error
+
+	Start time.Time
+	End   time.Time
+
+	Context context.Context
+}
+
+// String returns a formatted log message.
+func (q *QueryStatus) String() string {
+	lines := make([]string, 0, 8)
+
+	if q.SessID > 0 {
+		lines = append(lines, fmt.Sprintf(fmtLogSessID, q.SessID))
+	}
+
+	if q.TxID > 0 {
+		lines = append(lines, fmt.Sprintf(fmtLogTxID, q.TxID))
+	}
+
+	if query := q.Query; query != "" {
+		query = reInvisibleChars.ReplaceAllString(query, ` `)
+		query = strings.TrimSpace(query)
+		lines = append(lines, fmt.Sprintf(fmtLogQuery, query))
+	}
+
+	if len(q.Args) > 0 {
+		lines = append(lines, fmt.Sprintf(fmtLogArgs, q.Args))
+	}
+
+	if q.RowsAffected != nil {
+		lines = append(lines, fmt.Sprintf(fmtLogRowsAffected, *q.RowsAffected))
+	}
+	if q.LastInsertID != nil {
+		lines = append(lines, fmt.Sprintf(fmtLogLastInsertID, *q.LastInsertID))
+	}
+
+	if q.Err != nil {
+		lines = append(lines, fmt.Sprintf(fmtLogError, q.Err))
+	}
+
+	lines = append(lines, fmt.Sprintf(fmtLogTimeTaken, float64(q.End.UnixNano()-q.Start.UnixNano())/float64(1e9)))
+
+	if q.Context != nil {
+		lines = append(lines, fmt.Sprintf(fmtLogContext, q.Context))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// EnvEnableDebug can be used by adapters to determine if the user has enabled
+// debugging.
+//
+// If the user sets the `UPPERIO_DB_DEBUG` environment variable to a
+// non-empty value, all generated statements will be printed at runtime to
+// the standard logger.
+//
+// Example:
+//
+//	UPPERIO_DB_DEBUG=1 go test
+//
+//	UPPERIO_DB_DEBUG=1 ./go-program
+const (
+	EnvEnableDebug = `UPPERIO_DB_DEBUG`
+)
+
+// Logger represents a logging collector. You can pass a logging collector to
+// db.DefaultSettings.SetLogger(myCollector) to make it collect db.QueryStatus messages
+// after executing a query.
 type Logger interface {
-	Fatal(v ...interface{})
-	Fatalf(format string, v ...interface{})
-
-	Print(v ...interface{})
-	Printf(format string, v ...interface{})
-
-	Panic(v ...interface{})
-	Panicf(format string, v ...interface{})
+	Log(*QueryStatus)
 }
 
-// LoggingCollector provides different methods for collecting and classifying
-// log messages.
-type LoggingCollector interface {
-	Enabled(LogLevel) bool
-
-	Level() LogLevel
-
-	SetLogger(Logger)
-	SetLevel(LogLevel)
-
-	Trace(v ...interface{})
-	Tracef(format string, v ...interface{})
-
-	Debug(v ...interface{})
-	Debugf(format string, v ...interface{})
-
-	Info(v ...interface{})
-	Infof(format string, v ...interface{})
-
-	Warn(v ...interface{})
-	Warnf(format string, v ...interface{})
-
-	Error(v ...interface{})
-	Errorf(format string, v ...interface{})
-
-	Fatal(v ...interface{})
-	Fatalf(format string, v ...interface{})
-
-	Panic(v ...interface{})
-	Panicf(format string, v ...interface{})
+type defaultLogger struct {
 }
 
-type loggingCollector struct {
-	level  LogLevel
-	logger Logger
+func (lg *defaultLogger) Log(m *QueryStatus) {
+	log.Printf("\n\t%s\n\n", strings.Replace(m.String(), "\n", "\n\t", -1))
 }
 
-func (c *loggingCollector) Enabled(level LogLevel) bool {
-	return level >= c.level
-}
-
-func (c *loggingCollector) SetLevel(level LogLevel) {
-	c.level = level
-}
-
-func (c *loggingCollector) Level() LogLevel {
-	return c.level
-}
-
-func (c *loggingCollector) Logger() Logger {
-	if c.logger == nil {
-		return defaultLogger
-	}
-	return c.logger
-}
-
-func (c *loggingCollector) SetLogger(logger Logger) {
-	c.logger = logger
-}
-
-func (c *loggingCollector) logf(level LogLevel, f string, v ...interface{}) {
-	format := level.String() + "\n" + f
-	if _, file, line, ok := runtime.Caller(2); ok {
-		format = fmt.Sprintf("log_level=%s file=%s:%d\n%s", level, file, line, f)
-	}
-	format = "upper/db: " + format
-
-	if level >= LogLevelPanic {
-		c.Logger().Panicf(format, v...)
-	}
-	if level >= LogLevelFatal {
-		c.Logger().Fatalf(format, v...)
-	}
-	if c.Enabled(level) {
-		c.Logger().Printf(format, v...)
-	}
-}
-
-func (c *loggingCollector) log(level LogLevel, v ...interface{}) {
-	format := level.String() + "\n"
-	if _, file, line, ok := runtime.Caller(2); ok {
-		format = fmt.Sprintf("log_level=%s file=%s:%d\n", level, file, line)
-	}
-	format = "upper/db: " + format
-	v = append([]interface{}{format}, v...)
-
-	if level >= LogLevelPanic {
-		c.Logger().Panic(v...)
-	}
-	if level >= LogLevelFatal {
-		c.Logger().Fatal(v...)
-	}
-	if c.Enabled(level) {
-		c.Logger().Print(v...)
-	}
-}
-
-func (c *loggingCollector) Debugf(format string, v ...interface{}) {
-	c.logf(LogLevelDebug, format, v...)
-}
-func (c *loggingCollector) Debug(v ...interface{}) {
-	c.log(LogLevelDebug, v...)
-}
-
-func (c *loggingCollector) Tracef(format string, v ...interface{}) {
-	c.logf(LogLevelTrace, format, v...)
-}
-func (c *loggingCollector) Trace(v ...interface{}) {
-	c.log(LogLevelDebug, v...)
-}
-
-func (c *loggingCollector) Infof(format string, v ...interface{}) {
-	c.logf(LogLevelInfo, format, v...)
-}
-func (c *loggingCollector) Info(v ...interface{}) {
-	c.log(LogLevelInfo, v...)
-}
-
-func (c *loggingCollector) Warnf(format string, v ...interface{}) {
-	c.logf(LogLevelWarn, format, v...)
-}
-func (c *loggingCollector) Warn(v ...interface{}) {
-	c.log(LogLevelWarn, v...)
-}
-
-func (c *loggingCollector) Errorf(format string, v ...interface{}) {
-	c.logf(LogLevelError, format, v...)
-}
-func (c *loggingCollector) Error(v ...interface{}) {
-	c.log(LogLevelError, v...)
-}
-
-func (c *loggingCollector) Fatalf(format string, v ...interface{}) {
-	c.logf(LogLevelFatal, format, v...)
-}
-func (c *loggingCollector) Fatal(v ...interface{}) {
-	c.log(LogLevelFatal, v...)
-}
-
-func (c *loggingCollector) Panicf(format string, v ...interface{}) {
-	c.logf(LogLevelPanic, format, v...)
-}
-func (c *loggingCollector) Panic(v ...interface{}) {
-	c.log(LogLevelPanic, v...)
-}
-
-var defaultLoggingCollector LoggingCollector = &loggingCollector{
-	level:  defaultLogLevel,
-	logger: defaultLogger,
-}
-
-// LC returns the logging collector.
-func LC() LoggingCollector {
-	return defaultLoggingCollector
-}
+var _ = Logger(&defaultLogger{})
 
 func init() {
-	if logLevel := strings.ToUpper(os.Getenv("UPPER_DB_LOG")); logLevel != "" {
-		for ll := range logLevels {
-			if ll.String() == logLevel {
-				LC().SetLevel(ll)
-				break
-			}
-		}
+	if envEnabled(EnvEnableDebug) {
+		DefaultSettings.SetLogging(true)
 	}
 }

@@ -21,7 +21,7 @@
 
 package db
 
-// ConnectionURL represents a data source name (DSN).
+// ConnectionURL represents a connection string.
 type ConnectionURL interface {
 	// String returns the connection string that is going to be passed to the
 	// adapter.

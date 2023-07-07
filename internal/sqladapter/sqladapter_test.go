@@ -6,13 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestInterfaces(t *testing.T) {
-	var (
-		_ db.Collection = &collection{}
-		_ Collection    = &collection{}
-	)
-}
-
 func TestReplaceWithDollarSign(t *testing.T) {
 	tests := []struct {
 		in  string
